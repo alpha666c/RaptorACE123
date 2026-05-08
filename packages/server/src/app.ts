@@ -7,9 +7,15 @@ import { mcpRouter } from './routes/mcp.js';
 import { modelsRouter } from './routes/models.js';
 import { permissionsRouter } from './routes/permissions.js';
 import { eventsRouter } from './routes/events.js';
+import { chatRouter } from './routes/chat.js';
 import type { ServerState } from './types.js';
 
-export function buildApp(state: ServerState): Hono {
+export interface AppOptions {
+  /** Enables POST /api/chat. Used by the standalone runtime; extension omits this. */
+  runTurn?: (message: string, signal: AbortSignal) => Promise<{ text: string }>;
+}
+
+export function buildApp(state: ServerState, options: AppOptions = {}): Hono {
   const app = new Hono();
 
   // Health is unauthenticated — useful for the web app to verify the server is up.
@@ -44,6 +50,9 @@ export function buildApp(state: ServerState): Hono {
   app.route('/api/models', modelsRouter(state));
   app.route('/api/permissions', permissionsRouter(state));
   app.route('/api/events', eventsRouter(state));
+  if (options.runTurn) {
+    app.route('/api/chat', chatRouter(state, options.runTurn));
+  }
 
   app.notFound((c) => c.json({ error: 'not found', path: c.req.path }, 404));
 

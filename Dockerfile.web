@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1.7
+#
+# Docker image for the Next.js web oversight UI (apps/web).
+# Served on port 3737 by default. Speaks to the agent runtime over HTTP via
+# env-configured NEXT_PUBLIC_AGENT_URL (defaults to http://agent:23456 when
+# deployed alongside Dockerfile.agent via docker-compose).
+
+FROM node:24-slim AS build
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@11.0.8 --activate
+
+WORKDIR /build
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
+COPY apps/extension/package.json ./apps/extension/
+COPY apps/web/package.json ./apps/web/
+COPY apps/agent-runtime/package.json ./apps/agent-runtime/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/permissions/package.json ./packages/permissions/
+COPY packages/tools/package.json ./packages/tools/
+COPY packages/memory/package.json ./packages/memory/
+COPY packages/model-gateway/package.json ./packages/model-gateway/
+COPY packages/mcp/package.json ./packages/mcp/
+COPY packages/skills/package.json ./packages/skills/
+COPY packages/server/package.json ./packages/server/
+COPY packages/core/package.json ./packages/core/
+
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+
+COPY apps/web ./apps/web
+
+# Next.js build. We don't need `next start` in production — we can use Next's
+# standalone output, but for simplicity with Coolify just run `next start`.
+RUN pnpm -C apps/web run build
+
+
+FROM node:24-slim AS runtime
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@11.0.8 --activate
+
+WORKDIR /app
+
+COPY --from=build /build /app
+
+RUN useradd -m -u 1002 web && chown -R web:web /app
+USER web
+
+EXPOSE 3737
+CMD ["pnpm", "-C", "apps/web", "start"]

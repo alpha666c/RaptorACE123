@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/.next
+**/.agent
+**/out
+dist-vsix
+.git
+.github
+.vscode
+.DS_Store
+*.log
+test-workspace

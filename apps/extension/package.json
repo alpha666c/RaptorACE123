@@ -52,6 +52,22 @@
           "type": "boolean",
           "default": true,
           "description": "Start the local Hono oversight server on 127.0.0.1 alongside the agent."
+        },
+        "personalAgent.councilMode": {
+          "type": "string",
+          "enum": ["off", "auto", "force"],
+          "default": "auto",
+          "description": "Council mode: 'off' disables, 'auto' triggers on complex asks or `/council` prefix, 'force' runs every turn."
+        },
+        "personalAgent.maxCostPerTurnUsd": {
+          "type": "number",
+          "default": 2,
+          "description": "Cost guardrail in USD per turn. Exceeding this emits a warning; council mode uses this to cap multi-role passes."
+        },
+        "personalAgent.contextTokenBudget": {
+          "type": "number",
+          "default": 180000,
+          "description": "Rough token budget for the current model's context window. Prior turns are compacted when estimated tokens exceed 80% of this."
         }
       }
     }
@@ -59,7 +75,8 @@
   "scripts": {
     "build": "node esbuild.config.mjs",
     "watch": "node esbuild.config.mjs --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "package:vsix": "vsce package --no-dependencies --skip-license --out ../../dist-vsix/"
   },
   "dependencies": {
     "@agent/core": "workspace:*",
@@ -76,6 +93,7 @@
   "devDependencies": {
     "@types/node": "^22.9.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.1",
     "esbuild": "^0.24.0",
     "typescript": "^5.6.3"
   }

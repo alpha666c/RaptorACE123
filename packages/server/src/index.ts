@@ -5,6 +5,7 @@ import type { ServerState } from './types.js';
 
 export * from './auth.js';
 export * from './types.js';
+export * from './remote-approver.js';
 
 const log = getLogger('server');
 
@@ -12,8 +13,10 @@ export interface StartServerOptions {
   state: ServerState;
   /** Port to bind. Defaults to 23456. If in use, will try N+1 up to 10 times. */
   port?: number;
-  /** Host to bind. Always 127.0.0.1 — do not change. */
-  hostname?: '127.0.0.1';
+  /** Host to bind. Defaults to '127.0.0.1'. Pass '0.0.0.0' only for container deploys where the token is the sole defence. */
+  hostname?: string;
+  /** Chat runner (standalone runtime only). Enables POST /api/chat. */
+  runTurn?: (message: string, signal: AbortSignal) => Promise<{ text: string }>;
 }
 
 export interface RunningServer {
@@ -23,11 +26,12 @@ export interface RunningServer {
 }
 
 /**
- * Start the local Hono server on 127.0.0.1. Refuses to bind to any other
- * interface — the web app is strictly a local oversight tool.
+ * Start the Hono server. Defaults to 127.0.0.1 — the VS Code extension path.
+ * Pass `hostname: '0.0.0.0'` from the standalone runtime (apps/agent-runtime)
+ * when running inside a container; the bearer token is then the sole defence.
  */
 export async function startServer(opts: StartServerOptions): Promise<RunningServer> {
-  const app = buildApp(opts.state);
+  const app = buildApp(opts.state, { ...(opts.runTurn ? { runTurn: opts.runTurn } : {}) });
   const hostname = opts.hostname ?? '127.0.0.1';
   const startPort = opts.port ?? 23456;
 

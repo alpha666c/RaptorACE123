@@ -1,0 +1,43 @@
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    environment:
+      # --- REQUIRED ---
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY in .env or Coolify env}
+      # --- OPTIONAL but strongly recommended for persistence ---
+      AGENT_SERVER_TOKEN: ${AGENT_SERVER_TOKEN:-}
+      # --- MCP secrets (only if you've enabled those servers in mcp.config.json) ---
+      CONTEXT7_API_KEY: ${CONTEXT7_API_KEY:-}
+      NOTION_TOKEN: ${NOTION_TOKEN:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      # --- Tuning ---
+      AGENT_COUNCIL_MODE: ${AGENT_COUNCIL_MODE:-auto}
+      AGENT_MAX_COST_PER_TURN_USD: ${AGENT_MAX_COST_PER_TURN_USD:-2}
+      AGENT_CONTEXT_BUDGET: ${AGENT_CONTEXT_BUDGET:-180000}
+    volumes:
+      - workspace:/workspace
+    ports:
+      - "23456:23456"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    environment:
+      # The web app is a client-side Next.js app; agent URL + token are entered
+      # in the UI's Settings page (stored in the user's browser localStorage).
+      # Nothing sensitive to pass via env.
+      NODE_ENV: production
+    ports:
+      - "3737:3737"
+    depends_on:
+      - agent
+    restart: unless-stopped
+
+volumes:
+  workspace:
+    # Bind-mount a host directory at /workspace for persistent repo clones.
+    # On Coolify: configure a persistent volume and reference it here.

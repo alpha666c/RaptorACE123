@@ -100,8 +100,12 @@ export async function buildAgentHost(
   await loadUserAuthoredSkills(skills, roots);
   skills.registerToolsInto(registry);
 
-  const taskType = vscode.workspace.getConfiguration('personalAgent').get<string>('defaultTaskType') ?? 'implement';
-  const maxSteps = vscode.workspace.getConfiguration('personalAgent').get<number>('maxSteps') ?? 8;
+  const pcfg = vscode.workspace.getConfiguration('personalAgent');
+  const taskType = pcfg.get<string>('defaultTaskType') ?? 'implement';
+  const maxSteps = pcfg.get<number>('maxSteps') ?? 8;
+  const councilMode = (pcfg.get<string>('councilMode') ?? 'auto') as 'off' | 'auto' | 'force';
+  const maxCostPerTurnUsd = pcfg.get<number>('maxCostPerTurnUsd') ?? 2;
+  const contextTokenBudget = pcfg.get<number>('contextTokenBudget') ?? 180_000;
 
   const host = new AgentHost({
     projectRoots: roots,
@@ -114,6 +118,9 @@ export async function buildAgentHost(
     skills,
     taskType,
     maxSteps,
+    councilMode,
+    maxCostPerTurnUsd,
+    contextTokenBudget,
   });
 
   // Local oversight server — 127.0.0.1 only, bearer token persisted to SecretStorage.

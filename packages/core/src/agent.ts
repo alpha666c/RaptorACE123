@@ -9,6 +9,8 @@ import { getLogger, newId } from '@agent/shared';
 import type { MemoryStore } from '@agent/memory';
 import { buildAiSdkTools } from './tool-adapter.js';
 import { buildSystemPrompt } from './prompts.js';
+import { parseCouncilDirective, runCouncil, shouldAutoCouncil } from './council/index.js';
+import { compactMessages, shouldCompact } from './compaction.js';
 
 function describeApiError(error: unknown): string {
   if (!error || typeof error !== 'object') return String(error);
@@ -44,6 +46,12 @@ export interface AgentHostConfig {
   skills?: SkillRegistry;
   taskType?: string;
   maxSteps?: number;
+  /** Maximum USD cost per turn. When the per-turn running total would exceed this, subsequent model calls are blocked. */
+  maxCostPerTurnUsd?: number;
+  /** Context-window token budget. When prior messages exceed 80% of this, compaction runs before the turn. */
+  contextTokenBudget?: number;
+  /** Council mode: 'off' (default), 'auto' (heuristics + /council), or 'force' (every turn). */
+  councilMode?: 'off' | 'auto' | 'force';
 }
 
 export interface RunOptions {
@@ -187,14 +195,129 @@ export class AgentHost {
 
     const aiTools = buildAiSdkTools(this.cfg.registry, registryCtx);
     const selection = this.cfg.gateway.selectModel(this.cfg.taskType ?? 'implement');
-    const messages: CoreMessage[] = [...priorMessages, { role: 'user', content: userMessage }];
+
+    // Compaction: if prior messages near the context budget, summarise them.
+    const budget = this.cfg.contextTokenBudget;
+    let workingPriors = priorMessages;
+    if (budget && shouldCompact(workingPriors, budget)) {
+      try {
+        const compacted = await compactMessages({
+          priorMessages: workingPriors,
+          preserved: {
+            activeTask: userMessage.slice(0, 200),
+            currentTier: tier,
+            projectRoots: this.cfg.projectRoots,
+            filesTouched: [],
+            openDecisions: [],
+            unresolvedQuestions: [],
+          },
+          gateway: this.cfg.gateway,
+          ...(signal ? { signal } : {}),
+        });
+        workingPriors = compacted.messages;
+        this.log.info({ before: compacted.before, after: compacted.after }, 'compaction.applied');
+      } catch (e) {
+        this.log.warn({ err: (e as Error).message }, 'compaction.failed');
+      }
+    }
+
+    // Council mode: opt-in via explicit `/council` prefix, `councilMode` setting, or heuristics.
+    const councilDirective = parseCouncilDirective(userMessage);
+    const councilMode = this.cfg.councilMode ?? 'off';
+    const councilEnabled =
+      councilMode === 'force' ||
+      councilDirective.forced ||
+      (councilMode === 'auto' && shouldAutoCouncil(councilDirective.stripped));
+    const effectiveUserMessage = councilDirective.stripped || userMessage;
+
+    const messages: CoreMessage[] = [...workingPriors, { role: 'user', content: effectiveUserMessage }];
 
     let finalText = '';
     let inputTokens = 0;
     let outputTokens = 0;
 
     try {
-      this.log.info({ model: selection.resolvedModel, taskType: selection.taskType }, 'agent.run.start');
+      this.log.info(
+        { model: selection.resolvedModel, taskType: selection.taskType, council: councilEnabled },
+        'agent.run.start',
+      );
+
+      if (councilEnabled) {
+        const council = await runCouncil({
+          userMessage: effectiveUserMessage,
+          systemPromptCommon: systemPrompt,
+          gateway: this.cfg.gateway,
+          tools: aiTools,
+          maxSteps: this.cfg.maxSteps ?? 8,
+          temperature: selection.limits.temperature,
+          maxOutputTokens: selection.limits.maxOutputTokens,
+          onStreamChunk: (chunk) => {
+            finalText += chunk;
+            this.emit({ kind: 'message.chunk', sessionId: this.sessionId, text: chunk });
+          },
+          onRoleUpdate: (role, text) => {
+            this.emit({
+              kind: 'message.chunk',
+              sessionId: this.sessionId,
+              text: `\n\n[council:${role}]\n${text}\n`,
+            });
+          },
+          ...(signal ? { signal } : {}),
+        });
+        inputTokens = council.inputTokensTotal;
+        outputTokens = council.outputTokensTotal;
+        const costUsd = estimateCostUsd(selection.resolvedModel, inputTokens, outputTokens);
+        this.emit({ kind: 'message.complete', sessionId: this.sessionId, text: finalText });
+        this.emit({
+          kind: 'model.call',
+          sessionId: this.sessionId,
+          taskType: 'council',
+          model: selection.resolvedModel,
+          inputTokens,
+          outputTokens,
+          costUsd,
+        });
+        const endedAt = Date.now();
+        this.emit({ kind: 'agent.stopped', sessionId: this.sessionId, timestamp: endedAt, reason: 'done' });
+        this.persistTurn({
+          id: turnId,
+          userMessage: effectiveUserMessage,
+          assistantMessage: finalText,
+          toolCalls: toolCallRecords,
+          inputTokens,
+          outputTokens,
+          costUsd,
+          model: selection.resolvedModel,
+          taskType: 'council',
+          startedAt: turnStartedAt,
+          endedAt,
+          error: null,
+        });
+        await this.runPostTurnHooks(
+          {
+            userMessage: effectiveUserMessage,
+            assistantMessage: finalText,
+            toolCalls: toolCallRecords.map((t) => ({
+              name: t.name,
+              ok: t.ok,
+              ...(t.result !== undefined ? { result: t.result } : {}),
+              ...(t.error !== undefined ? { error: t.error } : {}),
+            })),
+            inputTokens,
+            outputTokens,
+            model: selection.resolvedModel,
+          },
+          tier,
+          toolContext,
+        );
+        // Budget check — if this turn exceeded the cap, surface it.
+        this.warnIfOverBudget(costUsd);
+        return {
+          sessionId: this.sessionId,
+          finalText,
+          messages: [...messages, ...council.implementerMessages],
+        };
+      }
 
       const result = streamText({
         model: selection.model,
@@ -322,6 +445,18 @@ export class AgentHost {
       toolContext,
       logger,
     };
+  }
+
+  private warnIfOverBudget(costUsd: number): void {
+    const cap = this.cfg.maxCostPerTurnUsd;
+    if (cap && costUsd > cap) {
+      this.log.warn({ costUsd, cap }, 'cost.guardrail.exceeded');
+      this.emit({
+        kind: 'error',
+        sessionId: this.sessionId,
+        message: `Cost guardrail exceeded: this turn cost $${costUsd.toFixed(4)} (cap $${cap.toFixed(2)}).`,
+      });
+    }
   }
 
   private async runPreTurnHooks(

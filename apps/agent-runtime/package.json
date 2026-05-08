@@ -1,0 +1,29 @@
+{
+  "name": "personal-coding-agent-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsup src/main.ts --format esm --clean --noExternal=@agent/core,@agent/mcp,@agent/memory,@agent/model-gateway,@agent/permissions,@agent/server,@agent/shared,@agent/skills,@agent/tools",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agent/core": "workspace:*",
+    "@agent/mcp": "workspace:*",
+    "@agent/memory": "workspace:*",
+    "@agent/model-gateway": "workspace:*",
+    "@agent/permissions": "workspace:*",
+    "@agent/server": "workspace:*",
+    "@agent/shared": "workspace:*",
+    "@agent/skills": "workspace:*",
+    "@agent/tools": "workspace:*",
+    "sql.js": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3"
+  }
+}
