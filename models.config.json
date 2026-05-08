@@ -1,0 +1,26 @@
+{
+  "models": {
+    "high-reasoning-coding": "anthropic/claude-opus-4.7",
+    "balanced-coding": "anthropic/claude-sonnet-4.6",
+    "fast-cheap": "anthropic/claude-opus-4.6-fast"
+  },
+  "routing": {
+    "default": "balanced-coding",
+    "plan": "high-reasoning-coding",
+    "implement": "balanced-coding",
+    "review": "high-reasoning-coding",
+    "summarize": "fast-cheap"
+  },
+  "fallbacks": {
+    "high-reasoning-coding": ["balanced-coding"],
+    "balanced-coding": ["fast-cheap"]
+  },
+  "limits": {
+    "maxOutputTokens": 8192,
+    "temperature": 0.2
+  },
+  "costGuardrail": {
+    "maxPerTurnUSD": 2.0,
+    "downshiftOnExceed": true
+  }
+}

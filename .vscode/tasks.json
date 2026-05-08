@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "npm: build - apps/extension",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["-C", "apps/extension", "run", "build"],
+      "group": "build",
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "npm: test - packages/tools",
+      "type": "shell",
+      "command": "pnpm",
+      "args": ["-C", "packages/tools", "test"],
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "servers": [
+    {
+      "name": "sequential-thinking",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "defaultTier": 0
+    },
+    {
+      "name": "context7",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "envKeys": ["CONTEXT7_API_KEY"],
+      "defaultTier": 0
+    }
+  ]
+}

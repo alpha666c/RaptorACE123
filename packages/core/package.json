@@ -1,0 +1,33 @@
+{
+  "name": "@agent/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agent/mcp": "workspace:*",
+    "@agent/memory": "workspace:*",
+    "@agent/model-gateway": "workspace:*",
+    "@agent/permissions": "workspace:*",
+    "@agent/shared": "workspace:*",
+    "@agent/skills": "workspace:*",
+    "@agent/tools": "workspace:*",
+    "ai": "^4.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "tsup": "^8.3.5",
+    "vitest": "^2.1.8"
+  }
+}

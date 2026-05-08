@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Personal Coding Agent Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/apps/extension",
+        "${workspaceFolder}/test-workspace"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/apps/extension/dist/**/*.cjs"
+      ],
+      "preLaunchTask": "npm: build - apps/extension"
+    }
+  ]
+}
