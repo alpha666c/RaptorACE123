@@ -246,6 +246,15 @@ async function resolveModelsConfigPath(roots: readonly string[]): Promise<string
 }
 
 function resolveSqlJsWasmPath(): string {
+  // Packaged .vsix: the esbuild config copies sql-wasm.wasm next to the bundled
+  // extension.cjs, so __dirname/sql-wasm.wasm works without a node_modules.
+  const bundled = path.join(__dirname, 'sql-wasm.wasm');
+  try {
+    if (require('node:fs').existsSync(bundled)) return bundled;
+  } catch {
+    // Fall through to dev-mode resolution.
+  }
+  // Dev mode (F5 / pnpm dev): the workspace node_modules has sql.js via pnpm.
   const req = createRequire(pathToFileURL(__filename));
   return path.join(path.dirname(req.resolve('sql.js')), 'sql-wasm.wasm');
 }

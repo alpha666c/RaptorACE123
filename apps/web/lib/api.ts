@@ -87,6 +87,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ tier }),
     }),
+  decide: (requestId: string, action: 'allow-once' | 'allow-session' | 'deny') =>
+    request<{ ok: true }>('/api/permissions/decide', {
+      method: 'POST',
+      body: JSON.stringify({ requestId, action }),
+    }),
+  chat: (message: string) =>
+    request<{ text: string }>('/api/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    }),
 };
 
 export interface SessionRecord {
