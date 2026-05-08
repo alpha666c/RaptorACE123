@@ -8,6 +8,7 @@ import { pickTier, VsCodeApprover } from './permissions-ui.js';
 import { promptSaveMemory, showMemoryList } from './memory-commands.js';
 import { listMcpServers, promptSetMcpSecret } from './mcp-commands.js';
 import { invokeSkill, listSkills, toggleSkill } from './skill-commands.js';
+import { showServerInfo } from './server-commands.js';
 
 let currentAgent: BuiltAgent | undefined;
 let currentChat: ChatPanel | undefined;
@@ -47,6 +48,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('personalAgent.resetSession', async () => {
       currentChat?.dispose();
       await currentAgent?.host.dispose('reset by user');
+      await currentAgent?.server?.stop();
       currentAgent?.memory.close();
       currentChat = undefined;
       currentAgent = undefined;
@@ -66,6 +68,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('personalAgent.skills.list', () => listSkills(currentAgent)),
     vscode.commands.registerCommand('personalAgent.skills.toggle', () => toggleSkill(currentAgent)),
     vscode.commands.registerCommand('personalAgent.skills.invoke', () => invokeSkill(currentAgent)),
+    vscode.commands.registerCommand('personalAgent.server.info', () => showServerInfo(currentAgent)),
   );
 }
 
@@ -103,6 +106,7 @@ export async function deactivate(): Promise<void> {
   currentChat?.dispose();
   currentChat = undefined;
   await currentAgent?.host.dispose('extension deactivated');
+  await currentAgent?.server?.stop();
   currentAgent?.memory.close();
   currentAgent = undefined;
   statusItem?.dispose();

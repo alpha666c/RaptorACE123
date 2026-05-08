@@ -14,12 +14,14 @@ import {
 import { MemoryStore } from '@agent/memory';
 import { DEFAULT_MODEL_CONFIG, ModelGateway, loadModelConfig } from '@agent/model-gateway';
 import { SessionPermissionStore, type Approver } from '@agent/permissions';
+import { generateToken, startServer, type RunningServer } from '@agent/server';
 import {
   SkillRegistry,
   buildBuiltInSkillRegistry,
   discoverUserSkills,
   loadUserSkill,
 } from '@agent/skills';
+import type { AgentEvent } from '@agent/shared';
 import { buildBuiltInRegistry, type ToolRegistry } from '@agent/tools';
 import { TIER } from '@agent/shared';
 import { getWorkspaceRoots } from './workspace-scope.js';
@@ -39,6 +41,8 @@ export interface BuiltAgent {
   registry: ToolRegistry;
   mcp: McpSupervisor;
   skills: SkillRegistry;
+  server?: RunningServer;
+  serverToken?: string;
 }
 
 export async function getOrPromptApiKey(context: vscode.ExtensionContext): Promise<string | undefined> {
@@ -112,7 +116,67 @@ export async function buildAgentHost(
     maxSteps,
   });
 
-  return { host, memory, session, registry, mcp, skills };
+  // Local oversight server — 127.0.0.1 only, bearer token persisted to SecretStorage.
+  const serverEnabled = vscode.workspace
+    .getConfiguration('personalAgent')
+    .get<boolean>('webServer', true);
+  let server: RunningServer | undefined;
+  let serverToken: string | undefined;
+  if (serverEnabled) {
+    serverToken = await getOrCreateServerToken(context);
+    const eventListeners = new Set<(ev: AgentEvent) => void>();
+    host.onEvent((ev) => {
+      for (const l of eventListeners) {
+        try {
+          l(ev);
+        } catch {
+          // never let a server listener crash the agent
+        }
+      }
+    });
+    try {
+      server = await startServer({
+        state: {
+          token: serverToken,
+          memory,
+          session,
+          registry,
+          gateway,
+          mcp,
+          skills,
+          subscribeEvents(listener) {
+            eventListeners.add(listener);
+            return () => eventListeners.delete(listener);
+          },
+          pendingApprovals: new Map(),
+        },
+      });
+    } catch (e) {
+      vscode.window.showWarningMessage(
+        `Personal Agent: web server failed to start: ${(e as Error).message}`,
+      );
+    }
+  }
+
+  return {
+    host,
+    memory,
+    session,
+    registry,
+    mcp,
+    skills,
+    ...(server ? { server } : {}),
+    ...(serverToken ? { serverToken } : {}),
+  };
+}
+
+const SERVER_TOKEN_KEY = 'personalAgent.webServerToken';
+async function getOrCreateServerToken(context: vscode.ExtensionContext): Promise<string> {
+  const existing = await context.secrets.get(SERVER_TOKEN_KEY);
+  if (existing) return existing;
+  const created = generateToken();
+  await context.secrets.store(SERVER_TOKEN_KEY, created);
+  return created;
 }
 
 async function loadUserAuthoredSkills(

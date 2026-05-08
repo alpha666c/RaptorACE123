@@ -22,7 +22,8 @@
       { "command": "personalAgent.mcp.list", "title": "Personal Agent: List MCP Servers" },
       { "command": "personalAgent.skills.list", "title": "Personal Agent: List Skills" },
       { "command": "personalAgent.skills.toggle", "title": "Personal Agent: Enable/Disable Skill" },
-      { "command": "personalAgent.skills.invoke", "title": "Personal Agent: Invoke Skill" }
+      { "command": "personalAgent.skills.invoke", "title": "Personal Agent: Invoke Skill" },
+      { "command": "personalAgent.server.info", "title": "Personal Agent: Show Web Server URL + Token" }
     ],
     "configuration": {
       "title": "Personal Coding Agent",
@@ -46,6 +47,11 @@
           "type": "string",
           "default": "",
           "description": "Absolute path to mcp.config.json. Defaults to <workspace>/mcp.config.json."
+        },
+        "personalAgent.webServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the local Hono oversight server on 127.0.0.1 alongside the agent."
         }
       }
     }
@@ -61,6 +67,7 @@
     "@agent/memory": "workspace:*",
     "@agent/model-gateway": "workspace:*",
     "@agent/permissions": "workspace:*",
+    "@agent/server": "workspace:*",
     "@agent/shared": "workspace:*",
     "@agent/skills": "workspace:*",
     "@agent/tools": "workspace:*",
