@@ -42,7 +42,7 @@ export type CouncilRole =
   | 'implementer'
   | 'reviewer'
   | 'ui-critic'
-  | 'synthesizer';
+  | 'synthesis';
 
 /**
  * Run the user's turn through the council pipeline.
@@ -57,7 +57,13 @@ export async function runCouncil(input: CouncilInput): Promise<CouncilResult> {
   let inputTokensTotal = 0;
   let outputTokensTotal = 0;
 
+  // Headers are emitted via onStreamChunk BEFORE each role runs, so the user
+  // sees role boundaries in real time. No trailing duplication — the text
+  // arrives once, in stream order.
+  const sectionHeader = (role: CouncilRole) => `\n\n[council:${role}]\n`;
+
   // 1. Architect produces a plan (no tools).
+  input.onStreamChunk(sectionHeader('architect'));
   const architect = await nonStreamingCall({
     gateway: input.gateway,
     taskType: 'council.architect',
@@ -68,10 +74,12 @@ export async function runCouncil(input: CouncilInput): Promise<CouncilResult> {
   });
   inputTokensTotal += architect.inputTokens;
   outputTokensTotal += architect.outputTokens;
+  input.onStreamChunk(architect.text);
   input.onRoleUpdate('architect', architect.text);
   log.info({ tokens: architect.outputTokens }, 'council.architect.done');
 
   // 2. Safety review of the plan (no tools).
+  input.onStreamChunk(sectionHeader('safety'));
   const safety = await nonStreamingCall({
     gateway: input.gateway,
     taskType: 'council.safety',
@@ -82,11 +90,13 @@ export async function runCouncil(input: CouncilInput): Promise<CouncilResult> {
   });
   inputTokensTotal += safety.inputTokens;
   outputTokensTotal += safety.outputTokens;
+  input.onStreamChunk(safety.text);
   input.onRoleUpdate('safety', safety.text);
   const verdict = safety.text.trim().split('\n')[0] ?? '';
   if (verdict.startsWith('BLOCK:')) {
-    const finalText = `Council BLOCKED.\n\n${verdict}\n\nArchitect's plan:\n${architect.text}`;
-    input.onStreamChunk(finalText);
+    const blockMsg = `\n\nCouncil BLOCKED. ${verdict}`;
+    input.onStreamChunk(blockMsg);
+    const finalText = `${architect.text}\n\n${safety.text}${blockMsg}`;
     return {
       finalText,
       architectPlan: architect.text,
@@ -100,6 +110,7 @@ export async function runCouncil(input: CouncilInput): Promise<CouncilResult> {
   }
 
   // 3. Implementer with full tool access — this is the only role that can edit.
+  input.onStreamChunk(sectionHeader('implementer'));
   const implementerSystem = `${input.systemPromptCommon}
 
 ## Council — Architect's plan (follow this)
@@ -133,9 +144,11 @@ expand scope. The Reviewer will inspect your changes afterwards.`;
   inputTokensTotal += implUsage.promptTokens ?? 0;
   outputTokensTotal += implUsage.completionTokens ?? 0;
   const implementerMessages = (await impl.response).messages;
+  // Report completion WITHOUT re-streaming the text — that would double it.
   input.onRoleUpdate('implementer', implementerText);
 
-  // 4. Reviewer (read-only). Sees the implementer's output and reads files.
+  // 4. Reviewer (read-only).
+  input.onStreamChunk(sectionHeader('reviewer'));
   const reviewer = await nonStreamingCall({
     gateway: input.gateway,
     taskType: 'council.reviewer',
@@ -146,9 +159,10 @@ expand scope. The Reviewer will inspect your changes afterwards.`;
   });
   inputTokensTotal += reviewer.inputTokens;
   outputTokensTotal += reviewer.outputTokens;
+  input.onStreamChunk(reviewer.text);
   input.onRoleUpdate('reviewer', reviewer.text);
 
-  // 5. UI critic (conditional). Short-circuits with "SKIP" if no UI.
+  // 5. UI critic (conditional). Short-circuits with "SKIP" if no UI touched.
   const uiCritic = await nonStreamingCall({
     gateway: input.gateway,
     taskType: 'council.critic',
@@ -160,12 +174,17 @@ expand scope. The Reviewer will inspect your changes afterwards.`;
   inputTokensTotal += uiCritic.inputTokens;
   outputTokensTotal += uiCritic.outputTokens;
   const uiText = uiCritic.text.trim();
-  if (uiText !== 'SKIP') input.onRoleUpdate('ui-critic', uiText);
+  if (uiText !== 'SKIP' && uiText.length > 0) {
+    input.onStreamChunk(sectionHeader('ui-critic'));
+    input.onStreamChunk(uiText);
+    input.onRoleUpdate('ui-critic', uiText);
+  }
 
-  // 6. Synthesis. Produce the final user-facing summary.
+  // 6. Synthesis — final user-facing summary.
+  input.onStreamChunk(sectionHeader('synthesis'));
   const synth = await nonStreamingCall({
     gateway: input.gateway,
-    taskType: 'council.safety', // reuse fast-cheap — synthesis is mechanical
+    taskType: 'summarize', // fast-cheap; synthesis is mechanical
     system: SYNTHESIS_PROMPT,
     user: [
       `## User request\n${input.userMessage}`,
@@ -182,13 +201,22 @@ expand scope. The Reviewer will inspect your changes afterwards.`;
   });
   inputTokensTotal += synth.inputTokens;
   outputTokensTotal += synth.outputTokens;
+  const synthText = synth.text.trim() || '(synthesis produced no output)';
+  input.onStreamChunk(synthText);
 
-  // Append the synthesis after the implementer's streamed output.
-  const appendix = `\n\n---\n${synth.text}`;
-  input.onStreamChunk(appendix);
+  const finalText = [
+    `[council:architect]\n${architect.text}`,
+    `[council:safety]\n${safety.text}`,
+    `[council:implementer]\n${implementerText}`,
+    `[council:reviewer]\n${reviewer.text}`,
+    uiText !== 'SKIP' && uiText.length > 0 ? `[council:ui-critic]\n${uiText}` : '',
+    `[council:synthesis]\n${synthText}`,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 
   return {
-    finalText: implementerText + appendix,
+    finalText,
     architectPlan: architect.text,
     safetyVerdict: safety.text,
     reviewerFindings: reviewer.text,

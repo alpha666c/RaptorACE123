@@ -255,13 +255,10 @@ export class AgentHost {
             finalText += chunk;
             this.emit({ kind: 'message.chunk', sessionId: this.sessionId, text: chunk });
           },
-          onRoleUpdate: (role, text) => {
-            this.emit({
-              kind: 'message.chunk',
-              sessionId: this.sessionId,
-              text: `\n\n[council:${role}]\n${text}\n`,
-            });
-          },
+          // Orchestrator already streams role headers + bodies via onStreamChunk.
+          // This hook stays as a reporting breadcrumb (for future telemetry) but
+          // no longer emits to the chat — that's what caused the duplication.
+          onRoleUpdate: () => {},
           ...(signal ? { signal } : {}),
         });
         inputTokens = council.inputTokensTotal;
