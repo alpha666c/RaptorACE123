@@ -9,9 +9,19 @@ export { writeFileTool } from './fs/write-file.js';
 export { editFileTool } from './fs/edit-file.js';
 export { gitStatusTool } from './git/status.js';
 export { gitDiffTool } from './git/diff.js';
+export { gitLogTool } from './git/log.js';
+export { gitBranchTool } from './git/branch.js';
+export { gitAddTool } from './git/add.js';
+export { gitRestoreTool } from './git/restore.js';
+export { gitCheckoutTool } from './git/checkout.js';
+export { gitStashTool } from './git/stash.js';
+export { gitMergeTool } from './git/merge.js';
 export { gitCommitTool } from './git/commit.js';
+export { gitFetchTool } from './git/fetch.js';
+export { gitPullTool } from './git/pull.js';
 export { gitPushTool } from './git/push.js';
 export { shellTool, buildShellTool } from './shell/run.js';
+export { shellExecTool } from './shell/exec.js';
 export { DEFAULT_SHELL_ALLOWLIST, matchAllowlist, type ShellAllowEntry } from './shell/allowlist.js';
 
 import { readFileTool } from './fs/read-file.js';
@@ -21,9 +31,19 @@ import { writeFileTool } from './fs/write-file.js';
 import { editFileTool } from './fs/edit-file.js';
 import { gitStatusTool } from './git/status.js';
 import { gitDiffTool } from './git/diff.js';
+import { gitLogTool } from './git/log.js';
+import { gitBranchTool } from './git/branch.js';
+import { gitAddTool } from './git/add.js';
+import { gitRestoreTool } from './git/restore.js';
+import { gitCheckoutTool } from './git/checkout.js';
+import { gitStashTool } from './git/stash.js';
+import { gitMergeTool } from './git/merge.js';
 import { gitCommitTool } from './git/commit.js';
+import { gitFetchTool } from './git/fetch.js';
+import { gitPullTool } from './git/pull.js';
 import { gitPushTool } from './git/push.js';
 import { shellTool } from './shell/run.js';
+import { shellExecTool } from './shell/exec.js';
 import { ToolRegistry } from './registry.js';
 
 /** Build a registry preloaded with all built-in tools. */
@@ -36,8 +56,18 @@ export function buildBuiltInRegistry(): ToolRegistry {
   reg.register(editFileTool);
   reg.register(gitStatusTool);
   reg.register(gitDiffTool);
+  reg.register(gitLogTool);
+  reg.register(gitBranchTool);
+  reg.register(gitAddTool);
+  reg.register(gitRestoreTool);
+  reg.register(gitCheckoutTool);
+  reg.register(gitStashTool);
+  reg.register(gitMergeTool);
   reg.register(gitCommitTool);
+  reg.register(gitFetchTool);
+  reg.register(gitPullTool);
   reg.register(gitPushTool);
   reg.register(shellTool);
+  reg.register(shellExecTool);
   return reg;
 }
