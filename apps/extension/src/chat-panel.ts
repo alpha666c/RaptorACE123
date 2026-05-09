@@ -1,6 +1,13 @@
 import * as vscode from 'vscode';
 import type { AgentHost, CoreMessage } from '@agent/core';
+import { pricingFor } from '@agent/model-gateway';
 import type { AgentEvent } from '@agent/shared';
+
+function pricingForLabel(modelId: string): { in: string; out: string } | null {
+  const p = pricingFor(modelId);
+  if (!p) return null;
+  return { in: p.inputPerMillion.toFixed(2), out: p.outputPerMillion.toFixed(2) };
+}
 
 export class ChatPanel {
   private panel: vscode.WebviewPanel;
@@ -31,9 +38,13 @@ export class ChatPanel {
       cfg: { gateway: { listAliases: () => Array<{ alias: string; modelId: string }> } };
     }).cfg;
     try {
-      return cfg.gateway
-        .listAliases()
-        .map(({ alias, modelId }) => ({ label: `${alias} — ${modelId}`, modelId }));
+      return cfg.gateway.listAliases().map(({ alias, modelId }) => {
+        const price = pricingForLabel(modelId);
+        const label = price
+          ? `${alias}  ·  ${modelId}  ·  $${price.in}/$${price.out} per M tok`
+          : `${alias}  ·  ${modelId}`;
+        return { label, modelId };
+      });
     } catch {
       return [];
     }
