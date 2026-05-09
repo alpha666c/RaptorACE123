@@ -64,4 +64,19 @@ export class ModelGateway {
   listAliases(): Array<{ alias: string; modelId: string }> {
     return Object.entries(this.opts.config.models).map(([alias, modelId]) => ({ alias, modelId }));
   }
+
+  /**
+   * Resolve a specific model id directly, bypassing the task-type → alias
+   * routing. Used when the UI's model picker forces a model for the next turn.
+   */
+  selectByModelId(modelId: string): ModelSelection {
+    return {
+      taskType: 'override',
+      alias: 'override',
+      resolvedModel: modelId,
+      model: this.openrouter.chat(modelId),
+      limits: this.opts.config.limits,
+      fallbacks: [],
+    };
+  }
 }

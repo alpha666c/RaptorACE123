@@ -101,6 +101,21 @@ export class AgentHost {
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * Force the next run() call (and subsequent ones) to use a specific
+   * OpenRouter model id, bypassing the task-type → alias routing. Pass null
+   * to clear the override and fall back to the router.
+   */
+  setModelOverride(modelId: string | null): void {
+    this.modelOverride = modelId;
+  }
+
+  getModelOverride(): string | null {
+    return this.modelOverride;
+  }
+
+  private modelOverride: string | null = null;
+
   async dispose(summary?: string): Promise<void> {
     if (this.cfg.memory && this.sessionStarted) {
       try {
@@ -194,7 +209,9 @@ export class AgentHost {
     };
 
     const aiTools = buildAiSdkTools(this.cfg.registry, registryCtx);
-    const selection = this.cfg.gateway.selectModel(this.cfg.taskType ?? 'implement');
+    const selection = this.modelOverride
+      ? this.cfg.gateway.selectByModelId(this.modelOverride)
+      : this.cfg.gateway.selectModel(this.cfg.taskType ?? 'implement');
 
     // Compaction: if prior messages near the context budget, summarise them.
     const budget = this.cfg.contextTokenBudget;

@@ -62,5 +62,12 @@ export const DEFAULT_MCP_CONFIG: McpConfig = McpConfigSchema.parse({
       envKeys: ['CONTEXT7_API_KEY'],
       defaultTier: 0,
     },
+    {
+      name: 'chrome-devtools',
+      command: 'npx',
+      args: ['-y', 'chrome-devtools-mcp@latest'],
+      defaultTier: 3,
+      startupTimeoutMs: 30_000,
+    },
   ],
 });

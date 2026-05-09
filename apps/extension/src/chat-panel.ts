@@ -19,10 +19,24 @@ export class ChatPanel {
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true },
     );
-    this.panel.webview.html = this.renderHtml();
+    this.panel.webview.html = this.renderHtml(this.aliasList());
     this.panel.onDidDispose(() => this.dispose());
     this.panel.webview.onDidReceiveMessage(this.handleMessage.bind(this));
     this.unsubscribe = host.onEvent((ev) => this.forwardEvent(ev));
+  }
+
+  private aliasList(): Array<{ label: string; modelId: string }> {
+    // AgentHost.cfg.gateway is private-ish; listing aliases is a harmless read.
+    const cfg = (this.host as unknown as {
+      cfg: { gateway: { listAliases: () => Array<{ alias: string; modelId: string }> } };
+    }).cfg;
+    try {
+      return cfg.gateway
+        .listAliases()
+        .map(({ alias, modelId }) => ({ label: `${alias} — ${modelId}`, modelId }));
+    } catch {
+      return [];
+    }
   }
 
   reveal(): void {
@@ -31,13 +45,16 @@ export class ChatPanel {
 
   private handleMessage(msg: unknown): void {
     if (!msg || typeof msg !== 'object') return;
-    const m = msg as { kind?: string; text?: string };
+    const m = msg as { kind?: string; text?: string; modelId?: string };
     switch (m.kind) {
       case 'user.message':
         if (typeof m.text === 'string') void this.runTurn(m.text);
         break;
       case 'cancel':
         this.currentController?.abort();
+        break;
+      case 'model.select':
+        this.host.setModelOverride(typeof m.modelId === 'string' && m.modelId ? m.modelId : null);
         break;
     }
   }
@@ -82,8 +99,14 @@ export class ChatPanel {
     this.panel.dispose();
   }
 
-  private renderHtml(): string {
+  private renderHtml(aliases: Array<{ label: string; modelId: string }>): string {
     const nonce = randomNonce();
+    const modelOptions = [
+      '<option value="">Auto (router)</option>',
+      ...aliases.map(
+        (a) => `<option value="${escapeAttr(a.modelId)}">${escapeAttr(a.label)}</option>`,
+      ),
+    ].join('');
     const csp = [
       "default-src 'none'",
       `style-src ${this.panel.webview.cspSource} 'unsafe-inline'`,
@@ -122,7 +145,20 @@ export class ChatPanel {
     box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
   }
   header .title { font-weight: 600; font-size: 13px; letter-spacing: -0.01em; }
-  header .sub { color: var(--vscode-descriptionForeground); font-size: 11px; margin-left: auto; }
+  header .spacer { flex: 1; }
+  header .sub { color: var(--vscode-descriptionForeground); font-size: 11px; }
+  header select.modelPick {
+    font: inherit;
+    font-size: 11px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    background: var(--vscode-dropdown-background, rgba(255,255,255,0.05));
+    color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+    border: 1px solid var(--vscode-dropdown-border, rgba(255,255,255,0.12));
+    cursor: pointer;
+    max-width: 260px;
+  }
+  header select.modelPick:hover { border-color: var(--vscode-focusBorder, rgba(255,255,255,0.3)); }
 
   /* --- Scroll container --- */
   #scroll {
@@ -168,7 +204,40 @@ export class ChatPanel {
     padding-left: 0;
     padding-right: 0;
     max-width: 100%;
+    position: relative;
   }
+
+  /* Collapsible long assistant messages */
+  .row.assistant .bubble.collapsible {
+    max-height: 280px;
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, black 72%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 72%, transparent 100%);
+  }
+  .row.assistant .bubble.expanded {
+    max-height: none;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+  .expand-wrapper {
+    max-width: 760px;
+    margin: -4px auto 0;
+    padding: 0 16px;
+    display: flex;
+    justify-content: flex-start;
+  }
+  .expand-btn {
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 500;
+    background: transparent;
+    color: var(--vscode-textLink-foreground, #4f8cff);
+    border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.12));
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+  .expand-btn:hover { background: rgba(79, 140, 255, 0.08); }
 
   /* --- Tool call chips --- */
   .tools {
@@ -327,6 +396,8 @@ export class ChatPanel {
   <header>
     <span class="dot" aria-hidden="true"></span>
     <span class="title">Personal Coding Agent</span>
+    <span class="spacer"></span>
+    <select id="modelPick" class="modelPick" title="Override the model for the next turn">${modelOptions}</select>
     <span class="sub" id="subtitle">ready</span>
   </header>
 
@@ -357,6 +428,22 @@ export class ChatPanel {
   const sendBtn = document.getElementById('send');
   const cancelBtn = document.getElementById('cancel');
   const subtitle = document.getElementById('subtitle');
+  const modelPick = document.getElementById('modelPick');
+
+  const COLLAPSE_THRESHOLD = 1400;
+
+  const stored = vscode.getState() || {};
+  if (stored.modelId && modelPick) modelPick.value = stored.modelId;
+  if (modelPick) {
+    modelPick.addEventListener('change', () => {
+      const modelId = modelPick.value;
+      vscode.setState({ ...(vscode.getState() || {}), modelId });
+      vscode.postMessage({ kind: 'model.select', modelId });
+    });
+    if (stored.modelId) {
+      vscode.postMessage({ kind: 'model.select', modelId: stored.modelId });
+    }
+  }
 
   let assistantEl = null;
   let assistantTools = null;
@@ -456,6 +543,44 @@ export class ChatPanel {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  function maybeCollapseLast() {
+    if (!assistantEl) return;
+    const text = assistantEl.textContent || '';
+    if (text.length < COLLAPSE_THRESHOLD) return;
+    if (assistantEl.dataset.collapsed === 'yes' || assistantEl.dataset.collapsed === 'no') return;
+    assistantEl.classList.add('collapsible');
+    assistantEl.dataset.collapsed = 'yes';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'expand-wrapper';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'expand-btn';
+    const fmt = (n) => n.toLocaleString();
+    btn.textContent = 'Show full response (' + fmt(text.length) + ' chars)';
+    btn.addEventListener('click', () => {
+      const isCollapsed = assistantEl.dataset.collapsed === 'yes';
+      if (isCollapsed) {
+        assistantEl.classList.remove('collapsible');
+        assistantEl.classList.add('expanded');
+        assistantEl.dataset.collapsed = 'no';
+        btn.textContent = 'Collapse';
+      } else {
+        assistantEl.classList.remove('expanded');
+        assistantEl.classList.add('collapsible');
+        assistantEl.dataset.collapsed = 'yes';
+        btn.textContent = 'Show full response (' + fmt(text.length) + ' chars)';
+        btn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    });
+    wrapper.appendChild(btn);
+
+    const row = assistantEl.parentElement;
+    if (row && row.parentElement) {
+      row.parentElement.insertBefore(wrapper, row.nextSibling);
+    }
+  }
+
   function send() {
     const t = input.value.trim();
     if (!t) return;
@@ -484,6 +609,7 @@ export class ChatPanel {
       subtitle.textContent = 'working…';
     } else if (m.kind === 'turn.complete') {
       clearThinking();
+      maybeCollapseLast();
       sendBtn.disabled = false;
       cancelBtn.disabled = true;
       subtitle.textContent = 'ready';
@@ -534,4 +660,12 @@ function randomNonce(): string {
   let s = '';
   for (let i = 0; i < 32; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
   return s;
+}
+
+function escapeAttr(s: string): string {
+  return s
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
 }
