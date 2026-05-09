@@ -14,8 +14,8 @@
 
 set -euo pipefail
 
-OWNER="viktorhedklin"
-REPO="RaptorACE"
+OWNER="alpha666c"
+REPO="RaptorACE123"
 VSIX_PATH_IN_REPO="dist-vsix/personal-coding-agent-extension-0.1.0.vsix"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
