@@ -10,6 +10,7 @@ export { editFileTool } from './fs/edit-file.js';
 export { gitStatusTool } from './git/status.js';
 export { gitDiffTool } from './git/diff.js';
 export { gitCommitTool } from './git/commit.js';
+export { gitPushTool } from './git/push.js';
 export { shellTool, buildShellTool } from './shell/run.js';
 export { DEFAULT_SHELL_ALLOWLIST, matchAllowlist, type ShellAllowEntry } from './shell/allowlist.js';
 
@@ -21,10 +22,11 @@ import { editFileTool } from './fs/edit-file.js';
 import { gitStatusTool } from './git/status.js';
 import { gitDiffTool } from './git/diff.js';
 import { gitCommitTool } from './git/commit.js';
+import { gitPushTool } from './git/push.js';
 import { shellTool } from './shell/run.js';
 import { ToolRegistry } from './registry.js';
 
-/** Build a registry preloaded with all built-in tools (M1 + M2). */
+/** Build a registry preloaded with all built-in tools. */
 export function buildBuiltInRegistry(): ToolRegistry {
   const reg = new ToolRegistry();
   reg.register(readFileTool);
@@ -35,6 +37,7 @@ export function buildBuiltInRegistry(): ToolRegistry {
   reg.register(gitStatusTool);
   reg.register(gitDiffTool);
   reg.register(gitCommitTool);
+  reg.register(gitPushTool);
   reg.register(shellTool);
   return reg;
 }
