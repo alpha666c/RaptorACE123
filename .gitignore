@@ -2,6 +2,8 @@ node_modules/
 dist/
 out/
 *.vsix
+# Allow packaged .vsix in dist-vsix/ so Codespaces / other machines can curl it.
+!dist-vsix/**/*.vsix
 .vscode-test/
 .env
 .env.local
