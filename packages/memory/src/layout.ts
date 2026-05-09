@@ -24,6 +24,12 @@ export interface MemoryLayout {
   factsDir: string;
   /** CLAUDE.md at the project root — always-loaded if present. */
   claudeMd: string;
+  /**
+   * Universal activity log. The agent appends a terse entry after every real-
+   * work turn and reads the tail at the start of every turn. Lives in every
+   * workspace at the same path so behaviour is identical regardless of repo.
+   */
+  changelogMd: string;
 }
 
 export function layoutFor(projectRoot: string): MemoryLayout {
@@ -40,5 +46,6 @@ export function layoutFor(projectRoot: string): MemoryLayout {
     decisionsDir: path.join(memoryDir, 'decisions'),
     factsDir: path.join(memoryDir, 'facts'),
     claudeMd: path.join(projectRoot, 'CLAUDE.md'),
+    changelogMd: path.join(agentDir, 'CHANGELOG.md'),
   };
 }

@@ -60,3 +60,15 @@ export interface TurnRecord {
   endedAt: number | null;
   error: string | null;
 }
+
+/** One line in `.agent/CHANGELOG.md`. Kept tiny so the tail fits in-prompt. */
+export interface ActivityEntry {
+  timestamp: number;
+  sessionId: string;
+  /** Short verb bucket: edit, feat, fix, chore, refactor, test, docs, conf, commit, push, run, change */
+  kind: string;
+  /** One-line human summary, max 100 chars. */
+  summary: string;
+  /** Up to 5 file paths most affected. */
+  files: string[];
+}

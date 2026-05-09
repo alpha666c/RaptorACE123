@@ -7,6 +7,7 @@ import { getLogger, hashContent, newId } from '@agent/shared';
 import { layoutFor, type MemoryLayout } from './layout.js';
 import { SCHEMA_SQL } from './schema.js';
 import {
+  type ActivityEntry,
   type AlwaysLoadedMemory,
   type Fact,
   type FactInput,
@@ -14,6 +15,23 @@ import {
   type SessionRecord,
   type TurnRecord,
 } from './types.js';
+
+const MAX_ACTIVITY_ENTRIES = 500;
+const ACTIVITY_HEADER =
+  '# Agent activity log\n<!-- Format: `- YYYY-MM-DD HH:MM | sess | kind | summary | files` (newest first). Auto-maintained; the agent reads the tail before each turn. -->\n\n';
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+function formatActivityLine(e: ActivityEntry): string {
+  const d = new Date(e.timestamp);
+  const stamp = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const sess = (e.sessionId || '').replace(/^sess_/, '').slice(0, 6) || 'anon';
+  const kind = (e.kind || 'change').slice(0, 10);
+  const summary = e.summary.replace(/\s+/g, ' ').trim().slice(0, 100) || '(no summary)';
+  const files = (e.files ?? []).slice(0, 5).join(', ').slice(0, 140);
+  return `- ${stamp} | ${sess} | ${kind} | ${summary}${files ? ` | ${files}` : ''}`;
+}
 
 const log = getLogger('memory');
 
@@ -355,6 +373,63 @@ export class MemoryStore {
       summary: (r['summary'] as string | null) ?? null,
       tier: r['tier'] as number,
     }));
+  }
+
+  // ---------- Activity log (universal changelog) ----------
+
+  /**
+   * Append one terse line to `.agent/CHANGELOG.md`. Entry format:
+   *   `- YYYY-MM-DD HH:MM | sess | kind | summary | files`
+   *
+   * Keeps the file newest-first. Trims to MAX_ACTIVITY_ENTRIES (500) so it
+   * never grows unbounded. Safe to call for every real-work turn.
+   */
+  appendActivityEntry(entry: ActivityEntry): void {
+    const line = formatActivityLine(entry);
+    let existing = '';
+    try {
+      existing = fs.readFileSync(this.layout.changelogMd, 'utf8');
+    } catch {
+      // Fresh file; that's fine.
+    }
+    const header = ACTIVITY_HEADER;
+    const body = existing.startsWith(header)
+      ? existing.slice(header.length).trimStart()
+      : existing.trimStart();
+    const prior = body
+      .split('\n')
+      .filter((l) => l.startsWith('- '))
+      .slice(0, MAX_ACTIVITY_ENTRIES - 1);
+    const next = `${header}${line}\n${prior.join('\n')}${prior.length > 0 ? '\n' : ''}`;
+    fs.writeFileSync(this.layout.changelogMd, next, 'utf8');
+  }
+
+  /**
+   * Return the tail of the activity log formatted for system-prompt injection
+   * (newest first, `maxChars` hard cap). Strips the header + keeps only the
+   * lines. Returns null if nothing logged yet.
+   */
+  loadActivityLog(maxChars = 3500): string | null {
+    let content: string;
+    try {
+      content = fs.readFileSync(this.layout.changelogMd, 'utf8');
+    } catch {
+      return null;
+    }
+    const body = content.startsWith(ACTIVITY_HEADER)
+      ? content.slice(ACTIVITY_HEADER.length)
+      : content;
+    const lines = body.split('\n').filter((l) => l.trim().length > 0);
+    if (lines.length === 0) return null;
+    // Take lines from the top (newest first) until we hit the char budget.
+    const out: string[] = [];
+    let used = 0;
+    for (const l of lines) {
+      if (used + l.length + 1 > maxChars) break;
+      out.push(l);
+      used += l.length + 1;
+    }
+    return out.join('\n');
   }
 
   // ---------- Helpers ----------

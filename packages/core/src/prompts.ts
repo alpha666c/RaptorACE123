@@ -6,6 +6,7 @@ export interface PromptContext {
   currentTier: Tier;
   availableTools: Array<{ name: string; description: string }>;
   memoryBlock?: string;
+  activityBlock?: string;
   skillsBlock?: string;
 }
 
@@ -73,5 +74,13 @@ to an MCP server process (e.g. \`npx -y @upstash/context7-mcp\`). The supervisor
 has already spawned it; just call the tool. Shelling the server out yourself
 produces a long-lived daemon that will time out and waste the user's time.
 
-${ctx.memoryBlock ?? ''}${ctx.skillsBlock ? `\n\n## Active skills\n${ctx.skillsBlock}` : ''}`;
+${ctx.memoryBlock ?? ''}${
+    ctx.activityBlock
+      ? `\n\n## Recent activity in this workspace (newest first)
+Check this before making changes so you don't duplicate or conflict with recent work.
+Each line is: \`YYYY-MM-DD HH:MM | sess | kind | summary | files\`
+
+${ctx.activityBlock}`
+      : ''
+  }${ctx.skillsBlock ? `\n\n## Active skills\n${ctx.skillsBlock}` : ''}`;
 }

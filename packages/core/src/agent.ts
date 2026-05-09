@@ -156,6 +156,7 @@ export class AgentHost {
     }));
 
     const memoryBlock = this.buildMemoryBlock(userMessage);
+    const activityBlock = this.buildActivityBlock();
 
     // Run pre-turn skill hooks. Each may contribute a markdown block appended
     // to the system prompt. Failures in a single skill don't block the turn.
@@ -171,6 +172,7 @@ export class AgentHost {
       currentTier: tier,
       availableTools,
       ...(memoryBlock ? { memoryBlock } : {}),
+      ...(activityBlock ? { activityBlock } : {}),
       ...(skillPromptAdditions ? { skillsBlock: skillPromptAdditions } : {}),
     });
 
@@ -326,6 +328,7 @@ export class AgentHost {
         );
         // Budget check — if this turn exceeded the cap, surface it.
         this.warnIfOverBudget(costUsd);
+        this.recordActivityIfChanged(effectiveUserMessage, toolCallRecords);
         return {
           sessionId: this.sessionId,
           finalText,
@@ -408,6 +411,8 @@ export class AgentHost {
         tier,
         toolContext,
       );
+
+      this.recordActivityIfChanged(userMessage, toolCallRecords);
 
       return {
         sessionId: this.sessionId,
@@ -524,6 +529,62 @@ export class AgentHost {
    * Includes always-loaded files and up to 8 FTS5-retrieved facts.
    * Returns null if no memory store or nothing to inject.
    */
+  private buildActivityBlock(): string | null {
+    if (!this.cfg.memory) return null;
+    try {
+      return this.cfg.memory.loadActivityLog(3500);
+    } catch (e) {
+      this.log.warn({ err: (e as Error).message }, 'activity.load.failed');
+      return null;
+    }
+  }
+
+  /**
+   * Emit one `.agent/CHANGELOG.md` entry per turn iff the turn actually
+   * changed state. Ignores turns that only used read-only tools.
+   */
+  private recordActivityIfChanged(
+    userMessage: string,
+    toolCalls: Array<{ name: string; ok: boolean; result?: unknown; error?: string }>,
+  ): void {
+    if (!this.cfg.memory) return;
+    const writeLike = new Set([
+      'fs.write',
+      'fs.edit',
+      'git.commit',
+      'git.push',
+      'shell.run',
+    ]);
+    const touched = new Set<string>();
+    let kind = 'change';
+    let hasRealWork = false;
+    for (const call of toolCalls) {
+      if (!call.ok) continue;
+      if (writeLike.has(call.name) || call.name.startsWith('mcp__')) {
+        hasRealWork ||= true;
+        if (call.name === 'git.commit') kind = 'commit';
+        else if (call.name === 'git.push') kind = 'push';
+        else if (call.name === 'fs.write') kind = 'feat';
+        else if (call.name === 'fs.edit' && kind === 'change') kind = 'edit';
+        else if (call.name === 'shell.run' && kind === 'change') kind = 'run';
+        const p = (call.result as { path?: string } | undefined)?.path;
+        if (typeof p === 'string') touched.add(p);
+      }
+    }
+    if (!hasRealWork) return;
+    try {
+      this.cfg.memory.appendActivityEntry({
+        timestamp: Date.now(),
+        sessionId: this.sessionId,
+        kind,
+        summary: userMessage.split('\n')[0]?.trim() ?? 'turn',
+        files: [...touched].slice(0, 5),
+      });
+    } catch (e) {
+      this.log.warn({ err: (e as Error).message }, 'activity.append.failed');
+    }
+  }
+
   private buildMemoryBlock(userMessage: string): string | null {
     if (!this.cfg.memory) return null;
     try {
